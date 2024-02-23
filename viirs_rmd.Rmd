@@ -1,0 +1,138 @@
+```{r setup, message=FALSE}
+
+#### Setup
+# Load packages
+library(blackmarbler)
+library(geodata)
+library(sf)
+library(terra)
+library(raster)
+library(ggplot2)
+library(lubridate)
+
+#### Define NASA bearer token; token is unique to each earthData account
+bearer <- "insert token"
+
+### ROI
+# Define region of interest (roi). The roi must be (1) an sf polygon and (2)
+# in the WGS84 (epsg:4326) coordinate reference system. Here, we read in a downloaded JSON file from GADM to load a polygon of Palestinian Territories 
+roi_sf <- st_read(dsn = "insert path")|> st_as_sf()
+
+#ROI is edited through a JSON editor to only display Gaza, since the website does not have separate files for Gaza
+```
+
+
+```{r building_rasters_viirs, message=FALSE, warning=FALSE}
+
+### Monthly data: raster for September 01, 2023
+r_1 <- bm_raster(roi_sf = roi_sf,
+                        product_id = "VNP46A3",
+                        date = "2023-09-01",
+                        bearer = bearer,
+                       quiet = TRUE)
+
+### Monthly data: raster for January 01, 2024
+r_2 <- bm_raster(roi_sf = roi_sf,
+                      product_id = "VNP46A3",
+                      date = "2024-01-01", 
+                      bearer = bearer,
+                      quiet = TRUE)
+
+
+```
+
+
+```{r first_graph, message=FALSE,echo=FALSE}
+
+#### Prep data
+r_1 <- r_1 |> mask(roi_sf)
+
+r_df <- rasterToPoints(r_1, spatial = TRUE) |> as.data.frame()
+names(r_df) <- c("value", "x", "y")
+
+## Remove very low values of NTL; can be considered noise
+r_df$value[r_df$value <= 2] <- 0
+
+## Distribution is skewed, so log
+r_df$value_adj <- log(r_df$value+1)
+
+##### Map
+p <- ggplot() +
+  geom_raster(data = r_df,
+  aes(x = x, y = y,
+  fill = value_adj)) +
+  scale_fill_gradient2(low = "black",
+                       mid = "yellow",
+                       high = "red",
+                       midpoint = 4.5) +
+  labs(title = "Nighttime Lights: October 2023") +
+  coord_quickmap() +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+  legend.position = "right")
+
+print(p)
+
+```
+
+
+
+```{r second_graph, echo=FALSE}
+
+#### Prep data
+r_2 <- r_2 |> mask(roi_sf)
+
+r_df_2 <- rasterToPoints(r_2, spatial = TRUE) |> as.data.frame()
+names(r_df_2) <- c("value", "x", "y")
+
+## Remove very low values of NTL; can be considered noise
+r_df_2$value[r_df_2$value <= 2] <- 0
+
+## Distribution is skewed, so log
+r_df_2$value_adj <- log(r_df_2$value+1)
+
+##### Map
+p2 <- ggplot() +
+  geom_raster(data = r_df_2,
+  aes(x = x, y = y,
+  fill = value_adj)) +
+  scale_fill_gradient2(low = "black",
+                       mid = "yellow",
+                       high = "red",
+                       midpoint = 4.5) +
+  labs(title = "Nighttime Lights: January 2024") +
+  coord_quickmap() +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+  legend.position = "right")
+
+plot(p2)
+```
+
+
+```{r statistics, warning=FALSE, message=FALSE}
+#### Extract data
+ntl_df <- bm_extract(roi_sf = roi_sf,
+                       product_id = "VNP46A3",
+                       date = seq.Date(from = ymd("2023-09-01"), to = ymd("2024-01-01"), by = "month"),
+                       bearer = bearer,
+                     quiet = TRUE)
+
+
+#### Trends over time
+ntl_df |>
+  ggplot() +
+  geom_col(aes(x = date,
+  y = ntl_mean),
+  fill = "darkorange") +
+  facet_wrap(~NAME_1) +
+  labs(x = "Months from 2023-09 to 2024-01",
+       y = "NTL Luminosity",
+       title = "Gaza Average Nighttime Lights") +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold"))
+```
+
+
+
+
